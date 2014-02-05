@@ -1,0 +1,31 @@
+# Defaults file for GMaGa, the GPG Mail Gateway proxy daemon
+
+# On boolean options, 0 means off/no/false, 1 means on/yes/true
+
+# Wether or not to start GMaGa (0/1)
+STARTGMAGA=1
+
+# where to put the PID file
+PIDFILE=/var/run/gmaga/gmaga.pid
+
+# The IP to listen on
+LISTEN=127.0.0.1:10035
+
+# The host to forward the connection to
+TALK=127.0.0.1:10036
+
+# How many parallel checks can be done in parallel
+CHILDREN=4
+
+# user ID to run as
+USERID=mail
+
+# group ID to run as
+GRPID=mail
+
+# The following sample entry enables use of a config file 
+# by spampd which can be used to override parameters from
+# the system-wide SpamAssassin configuration
+#
+#ADDOPTS="--config=/etc/gmaga.conf"
+ADDOPTS=""

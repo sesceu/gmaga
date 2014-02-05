@@ -466,6 +466,8 @@ use Getopt::Long;
 use IO::File;
 use lib '.';
 use POSIX;
+use Mail::GnuPG;
+use MIME::Parser;
 
 use File::Basename qw/dirname/;
 
@@ -488,6 +490,7 @@ my $listen      = undef;
 my $talk        = undef;
 my $progname    = "gmaga";
 my $debugdir    = "/tmp";
+my $pidfile     = "/var/run/$progname.pid";
 
 my $configfile = "/etc/$progname.conf";
 
@@ -516,6 +519,7 @@ if ( -e $configfile ) {
             if ( $key eq "debugtrace" )  { $debugtrace  = $val; }
             if ( $key eq "listen" )      { $listen      = $val; }
             if ( $key eq "talk" )        { $talk        = $val; }
+            if ( $key eq "pidfile" )     { $pidfile     = $val; }
         }
     }
 }
@@ -525,7 +529,8 @@ GetOptions(
     "maxperchild=n" => \$maxperchild,
     "debugtrace=s"  => \$debugtrace,
     "listen=s"      => \$listen,
-    "talk=s"        => \$talk
+    "talk=s"        => \$talk,
+    "pidfile=s"     => \$pidfile
 ) or die $syntax;
 
 die $syntax unless ( $listen and $talk );
@@ -556,7 +561,7 @@ use vars qw($please_die);
 $please_die = 0;
 $SIG{TERM} = sub { $please_die = 1; kill 15, keys %children if ($isparent); };
 
-open PID, "> /var/run/$progname.pid";
+open PID, "> $pidfile";
 print PID $$;
 close PID;
 
@@ -660,7 +665,7 @@ while (1) {
             # Add our own little header
             push @addheaders, $gmagaheaderpassed;
 
-            yammer_add_headers( $server, $client, @{$addheaders} );
+            yammer_add_headers( $server, $client, @addheaders );
             $server->{debug}->print("PASSED\n");
             $server->ok( $client->hear );
 
