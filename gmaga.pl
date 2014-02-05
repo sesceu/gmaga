@@ -700,7 +700,7 @@ while (1) {
 ##            }
 
             # Delete the temporary file here.
-            unlink( $server->{datafilename} );
+            # unlink( $server->{datafilename} );
         }
         else {
             # Normal conversation.
