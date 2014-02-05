@@ -28,4 +28,4 @@ GRPID=mail
 # the system-wide SpamAssassin configuration
 #
 #ADDOPTS="--config=/etc/gmaga.conf"
-ADDOPTS=""
+ADDOPTS="--debugtrace=debug"

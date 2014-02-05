@@ -494,10 +494,10 @@ my $pidfile     = "/var/run/$progname.pid";
 
 my $configfile = "/etc/$progname.conf";
 
-my $gmagaheaderpassed       = "X-GMaGa: Message passed GMaGa (testing)";
-my $gmagaheaderdecrypted    = "X-GMaGa: Message decrypted";
-my $gmagaheadernotencrypted = "X-GMaGa: Message wasn't encrypted";
-my $gmagaheadermissingkey   = "X-GMaGa: Missing key for decryption";
+my $gmagaheaderpassed       = "Message passed GMaGa (testing)";
+my $gmagaheaderdecrypted    = "Message decrypted";
+my $gmagaheadernotencrypted = "Message wasn't encrypted";
+my $gmagaheadermissingkey   = "Missing key for decryption";
 
 ############################
 # Arguments
@@ -506,7 +506,7 @@ my $gmagaheadermissingkey   = "X-GMaGa: Missing key for decryption";
 my $syntax =
     "syntax: $0 [--children=$children] [--minperchild=$minperchild] "
   . "[--maxperchild=$maxperchild] [--debugtrace=undef] "
-  . "--listen=listen.addr:port --talk=talk.addr:port\n";
+  . "--listen=listen.addr:port --talk=talk.addr:port --pidfile=$pidfile\n";
 
 if ( -e $configfile ) {
     open CFG, $configfile;
@@ -634,14 +634,15 @@ while (1) {
     $banner = "220 $debugtrace.$$" if defined $debugtrace;
     $server->ok($banner);
     my $datawhat;
+
     while ( my $what = $server->chat ) {
         if ( $what =~ m/^data/i ) {
 
-       # Beginning of DATA segment.  "DATA" command is not passed on to client,
-       # because content filters might reject it, in which case we don't want to
-       # send it on to the client.  SMTP is such that if we QUIT before we DATA,
-       # no mail will be sent. But once we DATA, there's no clean way to get
-       # out of it.
+            # Beginning of DATA segment.  "DATA" command is not passed on to client,
+            # because content filters might reject it, in which case we don't want to
+            # send it on to the client.  SMTP is such that if we QUIT before we DATA,
+            # no mail will be sent. But once we DATA, there's no clean way to get
+            # out of it.
             $server->{debug}
               ->print("Received DATA command, beginning filtering.\n");
 
@@ -653,59 +654,35 @@ while (1) {
         }
         elsif ( $what eq '.' ) {
 
-            # For now just add the gmaga passed header and forward the mail
-            $client->say($datawhat);
+            # create the MIME parser
+            my $parser = MIME::Parser->new;
 
-            # get its reply
+            # configure MIME Parser
+            $parser->decode_bodies(0);
+            #$parser->output_under($tmpdir);
+
+            # parse the data
+            $server->{data}->seek( 0, 0 );
+            my $entity = $parser->parse($server->{data});
+
+            # add a header indicating that the mail passed GMaGa
+            $entity->head()->add( 'X-GMaGa', $gmagaheaderpassed );
+
+            # attach a test string
+            $entity->attach(Data => $gmagaheaderpassed);
+
+            # tell client that the data is coming
+            $client->say($datawhat);
             $client->hear();
 
-            my @addheaders;
-            $server->{data}->seek( 0, 0 );
-
-            # Add our own little header
-            push @addheaders, $gmagaheaderpassed;
-
-            yammer_add_headers( $server, $client, @addheaders );
-            $server->{debug}->print("PASSED\n");
+            # prepare the data
+            my $new_data = $entity->stringify;
+           
+            # send the data 
+            send_data( $client, $new_data );
             $server->ok( $client->hear );
 
-##            # Now we have received the entire data segment, we need to scan it.
-##            # scan() can get hold of the data from $server
-##            my $ref = 1;#scan( $server, $client );
-##
-##            # if scan() returned non-undef, the data passed:
-##            if ($ref) {
-##
-##                # send the original DATA command to the client
-##                $client->say($datawhat);
-##
-##                # get its reply
-##                $client->hear();
-##
-##               # and then yammer it.  An additional parameter is the array that
-##               # was returned by scan() - this contains headers to add in to the
-##               # data segment that can specify what the content filter found
-##                yammer_add_headers( $server, $client, @{$ref} );
-##                $server->{debug}->print("PASSED\n");
-##                $server->ok( $client->hear );
-##            }
-##            else {
-##                # content rejected
-##                $server->{debug}->print("FAILED\n");
-##
-##                # tell the server that we like it, anyway.  We don't want viruses
-##                # and suchlike bouncing to the senders, since the sending address
-##                # was probably faked anyway.  We want to fail silently.
-##                $server->ok();
-##
-##                # So far, the client has merely had "MAIL FROM:" and "RCPT TO:"
-##                # commands from us.  If we "QUIT" here, it won't think twice about
-##                # it, and nothing will be sent on.  Which is what we want.
-##                $client->say("QUIT");
-##            }
-
-            # Delete the temporary file here.
-            # unlink( $server->{datafilename} );
+            $parser = undef;
         }
         else {
             # Normal conversation.
@@ -718,126 +695,16 @@ while (1) {
     exit 0 if $lives-- <= 0;
 }
 
-sub yammer_add_headers {
-    my ( $server, $client, @addheaders ) = (@_);
-    my $fh = $server->{data};
+sub send_data {
+    my ( $client, $data ) = (@_);
     local (*_);
     local ($/) = "\r\n";
 
-# This is set until we find a blank line, which means the headers are about to end.
-    my $inheaders = 1;
-    while (<$fh>) {
-        if ( defined($inheaders) and m/^\r\n$/ ) {
-
-            # End of headers
-            undef $inheaders;
-
-            # Quickly add in all our own headers
-            foreach my $h (@addheaders) {
-                $client->{sock}->print("$h\r\n");
-            }
-        }
-        s/^\./../;
-        $client->{sock}->print($_) or die "$0: write error: $!\n";
+    my @lines = split /\r?\n/, $data;
+    foreach my $line (@lines) {
+        $line =~ s/^\./../;
+        $client->{sock}->print($line."\r\n") or die "$0: write error: $!\n";
     }
     $client->{sock}->print(".\r\n") or die "$0: write error: $!\n";
 }
 
-############################
-# Scanning
-############################
-
-sub scan {
-    my ( $server, $client ) = (@_);
-    my @addheaders;
-    my $ret;
-
-# While we're scanning, we don't want the client to time-out. That would
-# suck, because then what do we do with this email?  The sender has already been
-# given the okay, so they think the mail has gone.
-# Send a NOOP every ten seconds, while we're scanning.
-    local $SIG{ALRM} = sub { $client->say("NOOP"); $client->hear(); alarm 10; };
-
-  # WARNING:
-  # You can't combine 'alarm' with 'sleep', since some systems implement 'sleep'
-  # using 'alarm', and you can only have one alarm at a time.  So, don't use
-  # sleep during scan() or anything called by scan()
-    alarm 10;
-
-    ## # Basically, any scanner can be called here.  They can access the data by
-    ## # using $server->{data} (a filehandle) or $server->{datafilename}
-    ## # if they return undef, they failed
-    ## # if they return anything else, it's taken to be a header to add to the
-    ## # message when it gets passed on
-    ## $ret = clamscan($server);
-    ## if ( !$ret ) { return undef; }
-    ## push @addheaders, $ret;
-
-    ## $ret = spamscan($server);
-    ## push @addheaders, $ret;
-
-    $server->{data}->seek( 0, 0 );
-
-    # Add our own little header
-    push @addheaders, $gmagaheaderpassed;
-
-    # Disable the alarm now:
-    alarm 0;
-    return \@addheaders;
-}
-
-## ############################
-## # ClamAV
-## ############################
-##
-## use Net::Telnet ();
-## use Fcntl qw/F_SETFD F_GETFD/;
-##
-## sub clamscan {
-##     my ($server) = (@_);
-##
-##     # Connect to clamd and ask it to scan our file.
-##     # This is why we need to use "new IO::File" in GMaGa::Server,
-##     # instead of new_tmpfile
-##     my $t =
-##       new Net::Telnet( Host => $clamhost, Port => $clamport, Timeout => 300 );
-##     my $fn = $server->{datafilename};
-##     $t->put( "SCAN " . $fn . "\n" );
-##     my $clamoutput = $t->getline();
-##     chomp($clamoutput);
-##     $server->{debug}->print("CLAM: '$clamoutput'\n");
-##     $t->close();
-##
-##     if ( $clamoutput =~ m/:\s+(.+)\s+FOUND$/ ) {
-##         return undef;
-##     }
-##     return $clamavheader;
-## }
-##
-## ############################
-## # Spamassassin
-## ############################
-##
-## use IPC::Open2;
-##
-## sub spamscan {
-##     my ($server) = (@_);
-##
-##     my ( $outsa, $insa );
-##     no warnings;
-##     open F, $server->{datafilename};
-##
-##     # connect to spamc and pipe the mail through it
-##     my $sapid = open2( $outsa, "<&F", $spamc );
-##
-##     waitpid $sapid, 0;
-##     my @spamcout = <$outsa>;
-##     foreach my $s (@spamcout) {
-##         $server->{debug}->print("SPAM: $s");
-##     }
-##     $spamcout[0] =~ m!^(.*)/(.*)$!;
-##     my $score = $1;
-##
-##     return $spamcheader . $score;
-## }
-##
