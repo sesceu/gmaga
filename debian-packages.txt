@@ -1,2 +1,3 @@
 libemail-mime-perl
 libmail-gnupg-perl
+libemail-valid-perl

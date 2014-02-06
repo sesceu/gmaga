@@ -18,10 +18,13 @@ TALK=127.0.0.1:10036
 CHILDREN=4
 
 # user ID to run as
-USERID=mail
+USERID=gmaga
 
 # group ID to run as
-GRPID=mail
+GRPID=gmaga
+
+# temporary directory to use
+TMPDIR=/tmp
 
 # The following sample entry enables use of a config file 
 # by spampd which can be used to override parameters from
@@ -29,3 +32,4 @@ GRPID=mail
 #
 #ADDOPTS="--config=/etc/gmaga.conf"
 ADDOPTS="--debugtrace=debug"
+#ADDOPTS=""
